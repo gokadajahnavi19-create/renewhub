@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Subscription Tracker — Single File App</title>
+  <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#7c3aed;--muted:#94a3b8;--glass: rgba(255,255,255,0.04)}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial;color:#e6eef8;background:linear-gradient(180deg,#071028 0%,#071530 60%);-webkit-font-smoothing:antialiased}
+    .app{max-width:1100px;margin:28px auto;padding:20px}
+    header{display:flex;align-items:center;gap:16px}
+    h1{margin:0;font-size:20px}
+    .top{display:flex;gap:12px;align-items:center;justify-content:space-between}
+    .controls{display:flex;gap:8px;align-items:center}
+    button{background:var(--accent);border:none;color:white;padding:8px 12px;border-radius:10px;cursor:pointer;box-shadow:0 6px 18px rgba(124,58,237,0.18);font-weight:600}
+    .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px 10px}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);padding:16px;border-radius:12px;margin-top:14px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+    form{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+    label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+    input,select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:#e6eef8}
+    .full{grid-column:1/-1}
+    .list{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:14px}
+    .sub{background:var(--card);padding:12px;border-radius:12px;position:relative;overflow:hidden;transition:transform .25s,box-shadow .25s}
+    .sub:hover{transform:translateY(-6px);box-shadow:0 12px 30px rgba(2,6,23,0.6)}
+    .sub h3{margin:0;font-size:16px}
+    .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:13px;color:var(--muted)}
+    .pill{background:var(--glass);padding:6px 8px;border-radius:999px;font-size:12px}
+    .right{display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+    .row{display:flex;justify-content:space-between;align-items:center}
+    .small{font-size:12px;color:var(--muted)}
+    .danger{color:#ff7b7b;font-weight:700}
+    .upcoming{border-left:4px solid #f59e0b;padding-left:8px}
+    .free{color:#10b981;font-weight:700}
+    .history{margin-top:8px}
+    .hist-item{display:flex;justify-content:space-between;font-size:13px}
+    .footer{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-top:14px}
+    .search{padding:8px;border-radius:10px;background:transparent;border:1px solid rgba(255,255,255,0.04);color:#e6eef8}
+    .stats{display:flex;gap:12px;flex-wrap:wrap}
+    .stat{background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);padding:12px;border-radius:10px;min-width:160px}
+    canvas{max-width:100%;height:220px}
+    .hint{font-size:12px;color:var(--muted)}
+    .suggest{margin-top:8px;font-size:13px;color:#cbd5e1}
+    /* modal */
+    .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:60}
+    .modal .box{width:940px;max-width:96%;max-height:90%;overflow:auto}
+    .hidden{display:none}
+    /* responsive */
+    @media (max-width:800px){form{grid-template-columns:1fr} .right{align-items:flex-start}}
+    /* animations */
+    .fade-in{animation:fadeIn .45s ease both}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div>
+        <h1>Subscription Tracker</h1>
+        <div class="hint">Track renewals, spending, free trials & more — single-file app (local only)</div>
+      </div>
+      <div class="controls">
+        <input id="search" class="search" placeholder="Search name/category..." />
+        <button id="addBtn">+ Add Subscription</button>
+        <button id="exportBtn" class="btn-ghost">Export CSV</button>
+        <button id="notifyBtn" class="btn-ghost">Enable Reminders</button>
+      </div>
+    </header>
+
+    <section class="card fade-in" id="dashboard">
+      <div class="row">
+        <div class="stats">
+          <div class="stat">
+            <div class="small">Total Active Subscriptions</div>
+            <div id="totalSubs" style="font-size:18px;font-weight:700">0</div>
+          </div>
+          <div class="stat">
+            <div class="small">Monthly Spend (est.)</div>
+            <div id="monthlySpend" style="font-size:18px;font-weight:700">₹0</div>
+          </div>
+          <div class="stat">
+            <div class="small">Yearly Spend (est.)</div>
+            <div id="yearlySpend" style="font-size:18px;font-weight:700">₹0</div>
+          </div>
+        </div>
+        <div style="width:46%">
+          <canvas id="spendChart"></canvas>
+        </div>
+      </div>
+      <div class="suggest">
+        Suggestions: <span id="suggestText">No suggestions yet — add subscriptions and payment history.</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h3 style="margin:0">Your Subscriptions</h3>
+        <div class="small">Click a card to expand details</div>
+      </div>
+
+      <div id="list" class="list"></div>
+
+      <div class="footer">
+        <div class="small">Tip: mark free trials and add payment history to get better suggestions.</div>
+        <div>
+          <button id="clearBtn" class="btn-ghost">Clear All (local)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- modal for add/edit -->
+    <div id="modal" class="modal hidden">
+      <div class="box card">
+        <h2 id="modalTitle">Add Subscription</h2>
+        <form id="subForm">
+          <div>
+            <label>Name</label>
+            <input id="name" required />
+          </div>
+          <div>
+            <label>Category (OTT, Cloud, Gym, Software...)</label>
+            <input id="category" placeholder="OTT" />
+          </div>
+          <div>
+            <label>Price (in ₹)</label>
+            <input id="price" type="number" min="0" step="0.01" />
+          </div>
+          <div>
+            <label>Billing cycle</label>
+            <select id="cycle">
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="yearly">Yearly</option>
+              <option value="one-time">One-time</option>
+            </select>
+          </div>
+          <div>
+            <label>Next renewal date</label>
+            <input id="next" type="date" />
+          </div>
+          <div>
+            <label>Payment method</label>
+            <input id="payment" placeholder="Card / UPI / PayPal" />
+          </div>
+          <div>
+            <label>Is this a free trial?</label>
+            <select id="isFree">
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
+          </div>
+          <div>
+            <label>Trial expiry date (if free)</label>
+            <input id="trialExpiry" type="date" />
+          </div>
+          <div class="full">
+            <label>Notes</label>
+            <input id="notes" />
+          </div>
+
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <button type="submit">Save</button>
+            <button type="button" id="cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    // Simple local single-file subscription manager
+    const KEY = 'subs_v1';
+    let subs = JSON.parse(localStorage.getItem(KEY) || '[]');
+    const listEl = document.getElementById('list');
+    const totalSubs = document.getElementById('totalSubs');
+    const monthlySpend = document.getElementById('monthlySpend');
+    const yearlySpend = document.getElementById('yearlySpend');
+    const suggestText = document.getElementById('suggestText');
+    const search = document.getElementById('search');
+
+    // Chart
+    const ctx = document.getElementById('spendChart').getContext('2d');
+    let chart = new Chart(ctx, {type:'bar',data:{labels:[],datasets:[{label:'Monthly estimate',data:[]}]},options:{responsive:true,plugins:{legend:{display:false}}}});
+
+    function save(){localStorage.setItem(KEY,JSON.stringify(subs));render();}
+
+    function addSub(sub){subs.push(sub);save();}
+
+    function uid(){return '_' + Math.random().toString(36).slice(2,9)}
+
+    function parseDate(str){if(!str) return null; const d=new Date(str+'T00:00:00'); return isNaN(d) ? null : d}
+
+    function formatDate(d){if(!d) return '-'; const dt = new Date(d); return dt.toLocaleDateString();}
+
+    function monthsBetween(d1,d2){const a=new Date(d1),b=new Date(d2);return (b.getFullYear()-a.getFullYear())*12 + (b.getMonth()-a.getMonth())}
+
+    function estMonthlyCost(sub){const p = Number(sub.price)||0; switch(sub.cycle){case 'monthly':return p;case 'quarterly':return p/3;case 'yearly':return p/12;case 'one-time':return p;default:return p}}
+
+    function buildCard(sub){
+      const el = document.createElement('div'); el.className='sub';
+      el.innerHTML = `
+        <div class="row">
+          <div>
+            <h3>${escapeHtml(sub.name)}</h3>
+            <div class="meta"><span class="pill">${escapeHtml(sub.category||'General')}</span><span class="pill">${sub.cycle}</span>${sub.isFree==='true'?'<span class="pill free">Free trial</span>':''}</div>
+          </div>
+          <div class="right">
+            <div class="small">₹${Number(sub.price||0).toFixed(2)}</div>
+            <div class="small">Next: ${formatDate(sub.next)}</div>
+          </div>
+        </div>
+        <div class="history hidden">
+        </div>
+      `;
+      // detect upcoming
+      const now = new Date();
+      const next = parseDate(sub.next);
+      if(next){
+        const diff = (next - now) / (1000*60*60*24);
+        if(diff <= 7 && diff >= 0){ el.classList.add('upcoming'); }
+        if(diff < 0){ el.querySelector('.row .right .small:last-child').classList.add('danger'); }
+      }
+
+      // expand on click
+      el.addEventListener('click', (e)=>{
+        if(e.target.tagName==='BUTTON') return; // don't collapse when pressing inner buttons
+        const h = el.querySelector('.history');
+        if(h.classList.contains('hidden')){
+          h.classList.remove('hidden'); renderDetails(h,sub);
+        } else { h.classList.add('hidden'); }
+      });
+
+      return el;
+    }
+
+    function renderDetails(container,sub){
+      container.innerHTML = '';
+      const div = document.createElement('div');
+      div.innerHTML = `
+        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-top:8px">
+          <div style="flex:1">
+            <div class="small">Payment method</div>
+            <div>${escapeHtml(sub.payment||'-')}</div>
+            <div class="small" style="margin-top:6px">Notes</div>
+            <div>${escapeHtml(sub.notes||'-')}</div>
+          </div>
+          <div style="width:180px;text-align:right">
+            <button data-id="${sub.id}" class="btn-ghost edit">Edit</button>
+            <button data-id="${sub.id}" class="btn-ghost del">Delete</button>
+          </div>
+        </div>
+        <div style="margin-top:8px">
+          <div class="small">Payment history</div>
+          <div id="paylist-${sub.id}"></div>
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <input placeholder="Amount" id="amt-${sub.id}" />
+            <input type="date" id="dt-${sub.id}" />
+            <button data-id="${sub.id}" class="btn-ghost addpay">Add Payment</button>
+          </div>
+        </div>
+      `;
+      container.appendChild(div);
+
+      // fill payments
+      const paylist = container.querySelector(`#paylist-${sub.id}`);
+      paylist.innerHTML = '';
+      (sub.payments||[]).slice().reverse().forEach(p=>{
+        const r = document.createElement('div'); r.className='hist-item'; r.innerHTML = `<div>₹${Number(p.amount).toFixed(2)}</div><div class="small">${formatDate(p.date)}</div>`; paylist.appendChild(r);
+      });
+
+      // attach edit/delete/add payment handlers
+      container.querySelectorAll('.edit').forEach(btn=>btn.addEventListener('click',(ev)=>{ev.stopPropagation(); openModal(sub)}));
+      container.querySelectorAll('.del').forEach(btn=>btn.addEventListener('click',(ev)=>{ev.stopPropagation(); if(confirm('Delete subscription?')){subs = subs.filter(s=>s.id!==sub.id); save();}}));
+      container.querySelectorAll('.addpay').forEach(btn=>btn.addEventListener('click',(ev)=>{
+        ev.stopPropagation(); const id = btn.dataset.id; const amt = Number(document.getElementById(`amt-${id}`).value||0); const dt = document.getElementById(`dt-${id}`).value; if(!amt||!dt){alert('Enter amount and date');return;} const s = subs.find(x=>x.id===id); s.payments = s.payments||[]; s.payments.push({amount:amt,date:dt}); save();
+      }));
+    }
+
+    function render(){
+      // apply search
+      const q = search.value.trim().toLowerCase();
+      listEl.innerHTML = '';
+      const filtered = subs.filter(s=>!q || s.name.toLowerCase().includes(q) || (s.category||'').toLowerCase().includes(q));
+      filtered.forEach(s=>{listEl.appendChild(buildCard(s))});
+      totalSubs.textContent = subs.length;
+
+      // stats
+      const monthly = subs.reduce((acc,s)=>acc + estMonthlyCost(s),0);
+      monthlySpend.textContent = '₹' + monthly.toFixed(2);
+      yearlySpend.textContent = '₹' + (monthly*12).toFixed(2);
+
+      // chart: simple 6-month projection
+      const labels=[]; const data=[]; const now = new Date();
+      for(let i=0;i<6;i++){ const m = new Date(now.getFullYear(), now.getMonth()+i,1); labels.push(m.toLocaleString(undefined,{month:'short',year:'numeric'})); let monthSum=0; subs.forEach(s=>{monthSum+= estMonthlyCost(s)}); data.push(Number(monthSum.toFixed(2)))}
+      chart.data.labels = labels; chart.data.datasets[0].data = data; chart.update();
+
+      // suggestions: duplicates; unused
+      const names = {}; const duplicates=[]; subs.forEach(s=>{const n=s.name.toLowerCase(); names[n]=(names[n]||0)+1; if(names[n]>1) duplicates.push(s.name)});
+      const unused = subs.filter(s => { const lastPay = (s.payments||[]).slice(-1)[0]; if(!lastPay) return true; const diffMonths = monthsBetween(lastPay.date, new Date().toISOString().slice(0,10)); return diffMonths>6});
+      const notes=[]; if(duplicates.length) notes.push('Duplicate names: '+[...new Set(duplicates)].join(', ')); if(unused.length) notes.push('No recent payments for: '+unused.slice(0,3).map(x=>x.name).join(', ')); suggestText.textContent = notes.length?notes.join(' • '):'No suggestions yet — add subscriptions and payment history.';
+
+      // highlight upcoming: add small badge
+      // render details collapsed
+    }
+
+    // helpers
+    function escapeHtml(s){if(!s) return ''; return String(s).replace(/[&<>"]+/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
+
+    // modal logic
+    const modal = document.getElementById('modal'); const addBtn = document.getElementById('addBtn'); const cancel = document.getElementById('cancel'); const subForm = document.getElementById('subForm'); const modalTitle = document.getElementById('modalTitle');
+    let editingId = null;
+    addBtn.addEventListener('click', ()=>openModal());
+    cancel.addEventListener('click', closeModal);
+    document.getElementById('clearBtn').addEventListener('click', ()=>{ if(confirm('Clear all local data?')){subs=[]; save();}});
+
+    function openModal(sub){ modal.classList.remove('hidden'); modal.scrollTop=0; document.body.style.overflow='hidden';
+      if(sub){ editingId = sub.id; modalTitle.textContent='Edit Subscription'; fillForm(sub);} else { editingId=null; modalTitle.textContent='Add Subscription'; subForm.reset(); }
+    }
+    function closeModal(){ modal.classList.add('hidden'); document.body.style.overflow=''; editingId=null }
+
+    subForm.addEventListener('submit',(e)=>{ e.preventDefault(); const obj = { id: editingId || uid(), name: document.getElementById('name').value.trim() || 'Untitled', category: document.getElementById('category').value.trim(), price: Number(document.getElementById('price').value||0), cycle: document.getElementById('cycle').value, next: document.getElementById('next').value, payment: document.getElementById('payment').value, isFree: document.getElementById('isFree').value, trialExpiry: document.getElementById('trialExpiry').value, notes: document.getElementById('notes').value, payments: (editingId ? (subs.find(s=>s.id===editingId)?.payments || []) : []) };
+      // duplicate detection: if name exists suggest
+      const dup = subs.find(s=>s.name.toLowerCase()===obj.name.toLowerCase() && s.id!==obj.id);
+      if(dup && !confirm('A subscription with the same name exists. Save anyway?')) return;
+      if(editingId){ subs = subs.map(s=> s.id===editingId ? obj : s) } else { subs.push(obj) }
+      save(); closeModal();
+    });
+
+    function fillForm(s){ document.getElementById('name').value=s.name; document.getElementById('category').value=s.category||''; document.getElementById('price').value=s.price||''; document.getElementById('cycle').value=s.cycle||'monthly'; document.getElementById('next').value=s.next||''; document.getElementById('payment').value=s.payment||''; document.getElementById('isFree').value=s.isFree||'false'; document.getElementById('trialExpiry').value=s.trialExpiry||''; document.getElementById('notes').value=s.notes||'' }
+
+    // export CSV
+    document.getElementById('exportBtn').addEventListener('click', ()=>{
+      if(!subs.length){alert('No subscriptions to export');return}
+      const rows = [['id','name','category','price','cycle','next','payment','isFree','trialExpiry','notes','payments']];
+      subs.forEach(s=> rows.push([s.id, s.name, s.category, s.price, s.cycle, s.next, s.payment, s.isFree, s.trialExpiry, (s.notes||'').replace(/\n/g,' '), JSON.stringify(s.payments||[])]));
+      const csv = rows.map(r=> r.map(c=> '"'+String(c||'').replace(/"/g,'""')+'"').join(',')).join('\n');
+      const blob = new Blob([csv],{type:'text/csv'}); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='subscriptions.csv'; a.click(); URL.revokeObjectURL(url);
+    });
+
+    // notifications
+    const notifyBtn = document.getElementById('notifyBtn');
+    notifyBtn.addEventListener('click', async ()=>{
+      if(!('Notification' in window)){alert('Notifications not supported');return}
+      const perm = await Notification.requestPermission(); if(perm==='granted'){ alert('Reminders enabled. You will receive browser notifications when you open this page and have upcoming renewals.'); }
+    });
+
+    function checkReminders(){ if(Notification.permission!=='granted') return; const now = new Date(); subs.forEach(s=>{ if(!s.next) return; const next = parseDate(s.next); if(!next) return; const diffDays = Math.ceil((next - now)/(1000*60*60*24)); if(diffDays<=3 && diffDays>=0){ new Notification('Upcoming renewal: '+s.name, {body:`₹${s.price} due in ${diffDays} day(s) on ${formatDate(s.next)}`}) } }) }
+
+    // basic duplicate/unused suggestion
+    function buildSuggestions(){ /* logic in render() */ }
+
+    // search
+    search.addEventListener('input', ()=>render());
+
+    // enable click outside modal to close
+    modal.addEventListener('click',(e)=>{ if(e.target===modal) closeModal(); });
+
+    // enable clear
+    document.getElementById('clearBtn').addEventListener('dblclick', ()=>{ subs=[]; save(); });
+
+    // initialization
+    render(); // initial render
+    // check reminders when opening
+    checkReminders();
+
+    // utility: suggest cancellation when no payments and free trial expired or duplicate
+    // Already part of render suggestions
+  </script>
+</body>
+</html>
